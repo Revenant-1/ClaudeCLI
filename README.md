@@ -1,254 +1,135 @@
 # Claude Code + OpenRouter Setup
 
-Interactive setup scripts for running **Claude Code through OpenRouter** while keeping your normal Claude Code / Anthropic login available.
+**One interactive script to install Claude Code and run it through OpenRouter, without touching your normal Claude login.**
 
-This repository provides:
+```text
+claude      →  your normal Claude Code (Anthropic account)   ← unchanged
+claude-or   →  Claude Code routed through OpenRouter          ← added by this setup
+```
 
-- `setup.ps1` — native Windows setup for PowerShell 5.1+ / 7+
-- `setup.sh` — macOS, Linux, and WSL setup
-- A separate `claude-or` launcher that routes Claude Code through OpenRouter
-- Interactive OpenRouter API-key validation
-- Automatic selection of current free OpenRouter models that support tool calling
-- Optional Anthropic Claude models through OpenRouter
-- Installation checks, live connection testing, and configuration reset
+| Script | Platform |
+|---|---|
+| [`setup.ps1`](setup.ps1) | Native Windows (PowerShell 5.1+ or 7+) |
+| [`setup.sh`](setup.sh) | macOS, Linux, WSL (and hands off to `setup.ps1` from Git Bash) |
 
-The scripts are designed so that OpenRouter configuration does **not** have to replace your normal `claude` command unless you explicitly choose that option.
+> [!IMPORTANT]
+> Claude Code itself is not free just because you installed it. OpenRouter offers some free models and routes, but availability, rate limits and privacy terms can change at any time. Nothing in this repo promises "free Claude Code".
+
+---
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Requirements](#requirements)
+- [Choosing a model](#choosing-a-model)
+- [Everyday use](#everyday-use)
+- [Verify your setup](#verify-your-setup)
+- [Where files are stored](#where-files-are-stored)
+- [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+- [Security](#security)
+- [Reset and uninstall](#reset-and-uninstall)
+
+---
+
+## Features
+
+- **Installs Claude Code** with Anthropic's official native installer (asks before running it).
+- **Bring your own key.** No key is embedded anywhere. Your key is validated against OpenRouter when you enter it.
+- **Live free-model list.** Fetches OpenRouter's current models that cost $0 *and* support tool calling, so nothing goes stale in the script.
+- **Three model modes:** a free model, a model ID you type, or Anthropic Claude via OpenRouter (paid credits).
+- **Safe by default.** Separate `claude-or` launcher, key stored encrypted (Windows) or in a `600` file (Unix), never in a `.env` file.
+- **Self-repair.** Windows menu option 5 fixes PATH and launcher problems automatically.
+- **Check and reset.** Health check with optional live test, plus one-step removal of everything the scripts created.
+
+---
+
+## Quick start
+
+### Windows
+
+Open PowerShell in the folder containing the scripts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+### macOS / Linux / WSL
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+### Then follow the menu
+
+| # | Windows | macOS / Linux / WSL |
+|---|---|---|
+| 1 | Install Claude Code | Install Claude Code |
+| 2 | Configure OpenRouter | Configure OpenRouter |
+| 3 | Check installation | Check installation |
+| 4 | Reset / remove OpenRouter config | Reset / remove OpenRouter config |
+| 5 | **Fix PATH / launcher problems** | Exit |
+| 6 | Exit | n/a |
+
+**First time:** choose **1 → 2 → 3**, open a **new terminal** if the script changed your PATH, then run:
+
+```bash
+claude-or
+```
+
+Inside Claude Code, type `/status` and confirm the base URL is `https://openrouter.ai/api`.
 
 ---
 
 ## How it works
 
-The setup creates a separate launcher:
+For each `claude-or` run, the launcher sets these environment variables **for that process only**:
+
+| Variable | Value |
+|---|---|
+| `ANTHROPIC_BASE_URL` | `https://openrouter.ai/api` |
+| `ANTHROPIC_AUTH_TOKEN` | your OpenRouter key |
+| `ANTHROPIC_API_KEY` | cleared, so a real Anthropic key is never used by mistake |
+| `ANTHROPIC_DEFAULT_*_MODEL` | your chosen model |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | your chosen model |
+
+**Windows**
 
 ```text
-claude-or
+claude-or → claude-or.cmd → claude-or-run.ps1 → claude.exe → OpenRouter
+              (starts the .ps1 with -ExecutionPolicy Bypass, for that one process only)
 ```
 
-Normal Claude Code remains:
+**macOS / Linux / WSL**
 
 ```text
-claude
+claude-or → ~/.local/bin/claude-or → loads ~/.config/claude-openrouter/env → claude → OpenRouter
 ```
 
-By default:
-
-```text
-claude     → your normal Claude Code / Anthropic setup
-claude-or  → Claude Code routed through OpenRouter
-```
-
-The OpenRouter launcher sets:
-
-```text
-ANTHROPIC_BASE_URL=https://openrouter.ai/api
-ANTHROPIC_AUTH_TOKEN=<your OpenRouter key>
-```
-
-It also clears `ANTHROPIC_API_KEY` for the OpenRouter invocation so a real Anthropic API key from the current environment is not accidentally used.
-
-The Windows script stores the OpenRouter key using Windows DPAPI. The Unix/macOS/WSL script stores it in a file protected with mode `600`.
+Because the variables live only inside the launcher, closing the terminal or running plain `claude` puts you straight back on your normal Anthropic setup.
 
 ---
 
-# Requirements
+## Requirements
 
-## Windows
+| | Windows | macOS / Linux / WSL |
+|---|---|---|
+| Shell | PowerShell 5.1+ (7+ works too) | `bash` |
+| Tools | none extra; [Git for Windows](https://git-scm.com/) may be needed by Claude Code | `curl`; plus `jq` **or** `python3` for the free-model list (optional) |
+| Network | internet access | internet access |
 
-Supported:
+You also need **your own OpenRouter API key**: https://openrouter.ai/settings/keys
 
-- Windows
-- PowerShell 5.1 or newer
-- PowerShell 7+ also works
-- Internet access
-- Git for Windows may be required by Claude Code
-
-The Windows script uses Anthropic's native installer when you select **Install Claude Code**.
-
-## macOS / Linux
-
-Supported:
-
-- macOS
-- Linux
-- WSL
-
-The Unix script expects:
-
-- `bash`
-- `curl`
-
-For automatic free-model discovery, it also needs either:
-
-- `jq`, or
-- `python3`
-
-If neither is available, you can enter a model ID manually.
-
-## OpenRouter
-
-You need your **own OpenRouter API key**.
-
-Create one from the OpenRouter key settings page:
-
-https://openrouter.ai/settings/keys
-
-Do not share your API key or commit it to Git.
+If neither `jq` nor `python3` is available on Unix, you can still type a model ID manually.
 
 ---
 
-# Quick Start
+## Choosing a model
 
-## Windows PowerShell
-
-Open PowerShell in the directory containing the scripts:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1
-```
-
-Then use the interactive menu:
-
-```text
-[1] Install Claude Code
-[2] Configure OpenRouter
-[3] Check installation
-[4] Reset / remove OpenRouter config
-[5] Exit
-```
-
-Recommended first-time sequence:
-
-```text
-1 → Install Claude Code
-2 → Configure OpenRouter
-3 → Check installation
-```
-
-After configuration:
-
-```powershell
-claude-or
-```
-
----
-
-## macOS / Linux / WSL
-
-Make the script executable:
-
-```bash
-chmod +x setup.sh
-```
-
-Run it:
-
-```bash
-./setup.sh
-```
-
-Then use:
-
-```text
-[1] Install Claude Code
-[2] Configure OpenRouter
-[3] Check installation
-[4] Reset / remove OpenRouter config
-[5] Exit
-```
-
-After configuration:
-
-```bash
-claude-or
-```
-
----
-
-# Windows: Detailed Setup
-
-## 1. Start PowerShell
-
-Open PowerShell and navigate to the directory containing `setup.ps1`.
-
-For example:
-
-```powershell
-cd C:\path\to\claude-openrouter
-```
-
-## 2. Run the setup script
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1
-```
-
-The script displays:
-
-```text
-+------------------------------------------+
-|     Claude Code + OpenRouter Setup       |
-+------------------------------------------+
-```
-
-## 3. Install Claude Code
-
-Choose:
-
-```text
-[1] Install Claude Code
-```
-
-If Claude Code is already installed, the script detects it and asks whether you want to reinstall/update it.
-
-The installer invoked by the script is Anthropic's native installer:
-
-```powershell
-irm https://claude.ai/install.ps1 | iex
-```
-
-If Claude was installed successfully but is not immediately available, open a new PowerShell window.
-
-### Git for Windows
-
-The setup checks whether `git` is available.
-
-If Git for Windows is missing and Claude Code requires Git Bash functionality, install Git for Windows from:
-
-https://git-scm.com/
-
----
-
-# Configure OpenRouter
-
-Choose:
-
-```text
-[2] Configure OpenRouter
-```
-
-The script asks for your OpenRouter API key.
-
-Input is hidden:
-
-```text
-Enter your OpenRouter API key (input hidden)
-```
-
-The key is checked for basic formatting and then validated against OpenRouter.
-
-A normal OpenRouter key is expected to begin with:
-
-```text
-sk-or-
-```
-
-If OpenRouter explicitly rejects the key, the script asks whether you want to save it anyway.
-
----
-
-# Choose a Model
-
-After entering the API key, the setup provides three choices:
+After you enter your key, option 2 offers:
 
 ```text
 [1] Free model (choose from OpenRouter's current free list)
@@ -256,915 +137,210 @@ After entering the API key, the setup provides three choices:
 [3] Anthropic Claude via OpenRouter (paid credits, best compatibility)
 ```
 
-## Option 1 — Free model
+| Mode | What it does | Cost | Compatibility |
+|---|---|---|---|
+| **1. Free model** | Lists up to 15 current free models with tool-calling support, sorted by context length; you pick one (or press `m` to type an ID). | $0, but tight limits | Varies by model |
+| **2. Manual ID** | You enter something like `vendor/model:free`. The format is validated. | Depends on the model | Varies by model |
+| **3. Anthropic via OpenRouter** | Enables gateway model discovery and maps the Fable, Opus, Sonnet, Haiku and subagent aliases to Anthropic's latest models. | Billed to your OpenRouter credits | Best |
 
-The script queries OpenRouter's current model list and filters for models that:
+> [!WARNING]
+> OpenRouter states that Claude Code is only guaranteed to work with Anthropic's first-party models. Other models, including free ones, can misbehave with tool calls. Free endpoints may also log prompts, so don't send secrets, credentials or private code through them.
 
-- have zero prompt pricing
-- have zero completion pricing
-- support tool calling
-
-It then displays up to 15 models, ordered by context length.
-
-Example format:
-
-```text
-[ 1] vendor/model-name:free                         128k context
-[ 2] vendor/another-model:free                      64k context
-...
-[ m] Enter a model ID manually
-```
-
-Select the number corresponding to the model you want.
-
-### Important
-
-Free model availability, limits, and behavior can change on OpenRouter.
-
-The setup script does not hard-code a permanent free-model list; it queries OpenRouter when you configure it.
+To change the model or key later, just run **[2] Configure OpenRouter** again.
 
 ---
 
-## Option 2 — Manual model ID
-
-Choose:
-
-```text
-[2] Enter a model ID manually
-```
-
-Then enter the OpenRouter model ID, for example:
-
-```text
-vendor/model:free
-```
-
-The script validates the model-ID format before saving it.
-
-Use this option when:
-
-- you already know the model ID
-- the model is not shown in the automatically discovered list
-- you want to use a specific OpenRouter model
-
----
-
-## Option 3 — Anthropic Claude through OpenRouter
-
-Choose:
-
-```text
-[3] Anthropic Claude via OpenRouter
-```
-
-This configures Claude Code to use Anthropic models through OpenRouter.
-
-The configuration enables gateway model discovery and assigns the Anthropic model aliases used by the script, including Fable, Opus, Sonnet, Haiku, and the subagent model.
-
-This option uses your OpenRouter credits and is not the same as logging directly into Anthropic.
-
----
-
-# Where Configuration Is Stored
-
-## Windows
-
-The configuration directory is:
-
-```text
-%USERPROFILE%\.claude-openrouter
-```
-
-It contains:
-
-```text
-key.enc
-config.json
-claude-or.ps1
-claude-or.cmd
-```
-
-The API key is stored in encrypted form using Windows DPAPI.
-
-The encrypted key is intended to be readable by your Windows user on that machine.
-
-The key is not stored in:
-
-- a `.env` file
-- the Windows registry
-- plain text configuration
-
----
-
-## macOS / Linux / WSL
-
-The configuration directory is:
-
-```text
-~/.config/claude-openrouter
-```
-
-The main secret file is:
-
-```text
-~/.config/claude-openrouter/env
-```
-
-The script creates the directory with restrictive permissions and writes the environment file with:
-
-```text
-chmod 600
-```
-
-The launcher is:
-
-```text
-~/.local/bin/claude-or
-```
-
-The environment file contains the OpenRouter key, so **do not commit it, upload it, or share it**.
-
----
-
-# Starting Claude Code through OpenRouter
-
-Once setup is complete, run:
+## Everyday use
 
 ```bash
-claude-or
+claude-or                                   # interactive session via OpenRouter
+claude-or -p "Reply with the single word: OK"   # one-off, non-interactive
+claude-or --continue                        # any Claude Code argument is forwarded
+claude                                      # your normal Anthropic setup
 ```
 
-On Windows PowerShell:
+**If you were previously logged in to Claude Code with an Anthropic account,** run `/logout` once inside Claude Code, quit, and start `claude-or`. A cached login can cause auth-conflict or model-not-found errors.
 
-```powershell
-claude-or
-```
+### Optional: make plain `claude` use OpenRouter (Unix only)
 
-This launcher loads the OpenRouter configuration and then starts Claude Code.
+During configuration on macOS/Linux/WSL you can choose to add a marked block to your shell profile so plain `claude` also uses OpenRouter. It is off by default, and Reset removes it.
 
-You can pass normal Claude Code arguments through the launcher.
-
-For example:
-
-```bash
-claude-or -p "Reply with the single word: OK"
-```
-
-The setup's own live test uses this same pattern.
-
----
-
-# Verify the Configuration
-
-Run the setup script again and choose:
-
-```text
-[3] Check installation
-```
-
-The check verifies:
-
-1. Whether `claude` is installed
-2. Whether the OpenRouter configuration exists
-3. Which model is configured
-4. Whether the saved key can be read
-5. Whether OpenRouter accepts the key
-6. Whether the `claude-or` launcher exists
-7. Whether a conflicting `ANTHROPIC_API_KEY` is present
-
-The script can also run a small live request through OpenRouter.
-
-The live test consumes a small amount of OpenRouter quota/credits.
-
----
-
-# Verify from Inside Claude Code
-
-After starting:
-
-```bash
-claude-or
-```
-
-run:
-
-```text
-/status
-```
-
-The configuration should show:
-
-```text
-Auth token: ANTHROPIC_AUTH_TOKEN
-```
-
-and the Anthropic base URL should be:
-
-```text
-https://openrouter.ai/api
-```
-
-This confirms that the OpenRouter launcher is providing the authentication and endpoint configuration.
-
----
-
-# Important: Existing Anthropic Login
-
-If you have previously logged into Claude Code directly with an Anthropic account, the setup recommends running:
-
-```text
-/logout
-```
-
-inside Claude Code once.
-
-Then quit Claude Code and start it again.
-
-A cached Anthropic login can otherwise cause authentication conflicts or model-not-found errors when switching to the OpenRouter configuration.
-
-A typical clean transition is:
-
-```text
-Claude Code
-    ↓
-/logout
-    ↓
-quit Claude Code
-    ↓
-claude-or
-    ↓
-/status
-```
-
----
-
-# Keeping Both Setups
-
-The recommended configuration is:
-
-```text
-claude
-  └── normal Anthropic setup
-
-claude-or
-  └── OpenRouter setup
-```
-
-This lets you switch between them without rewriting your normal Claude Code configuration.
-
-For example:
-
-```bash
-claude
-```
-
-uses your normal configuration.
-
-```bash
-claude-or
-```
-
-uses OpenRouter.
-
-This separation is the default behavior of the setup scripts.
-
----
-
-# Making `claude` Use OpenRouter by Default
-
-The Unix/macOS/WSL script provides an optional choice:
-
-```text
-Make OpenRouter the default for 'claude'?
-```
-
-If you answer yes, the script adds the OpenRouter environment configuration to your shell profile.
-
-Then:
-
-```bash
-claude
-```
-
-will use the OpenRouter configuration by default.
-
-If you answer no, keep using:
-
-```bash
-claude-or
-```
-
-for OpenRouter.
-
-## Windows
-
-The Windows script deliberately does **not** enable this behavior automatically.
-
-It explains that putting the OpenRouter key directly into user environment variables would store the key in plain text there.
-
-The safer Windows default is therefore:
-
-```text
-claude     → normal Claude setup
-claude-or  → OpenRouter
-```
-
----
-
-# WSL
-
-If you run:
-
-```bash
-./setup.sh
-```
-
-inside WSL, the script treats WSL as Linux and installs/configures the Linux-side Claude Code environment inside WSL.
-
-This is separate from native Windows PowerShell.
-
-For native Windows, use:
-
-```powershell
-.\setup.ps1
-```
-
-If the Bash script detects native Windows through Git Bash/MSYS/Cygwin, it attempts to hand off to:
-
-```text
-setup.ps1
-```
-
-when `powershell.exe` is available.
-
----
-
-# macOS and Linux Shell Profile Behavior
-
-The script detects the shell and chooses the appropriate profile:
-
-| Shell / OS | Profile |
+| Shell / OS | Profile edited |
 |---|---|
 | zsh | `~/.zshrc` |
 | bash on macOS | `~/.bash_profile` |
-| bash on Linux | `~/.bashrc` |
+| bash on Linux / WSL | `~/.bashrc` |
 | other POSIX shell | `~/.profile` |
-| fish | Profile editing is skipped |
+| fish | skipped (use `claude-or`) |
 
-If you choose to add `~/.local/bin` to PATH, the script adds:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-The script marks its profile changes with:
-
-```text
-# >>> claude-openrouter >>>
-...
-# <<< claude-openrouter <<<
-```
-
-This allows the reset operation to remove the lines that the script itself added.
-
-After a profile change, open a new terminal so the change takes effect.
+Windows intentionally has no equivalent: it would require storing your key in a plain-text user environment variable.
 
 ---
 
-# Reset / Remove OpenRouter Configuration
+## Verify your setup
 
-Choose:
+Choose **Check installation** in the menu. It reports:
 
-```text
-[4] Reset / remove OpenRouter config
-```
+1. whether `claude` is installed and reachable (and where it lives)
+2. whether the OpenRouter configuration exists, and on Unix that its permissions are `600`
+3. the configured model and the last 4 characters of the key
+4. whether OpenRouter accepts the key
+5. whether `claude-or` exists and is on PATH; on Windows, which file it resolves to and the current execution policy
+6. a warning if your session has a real `ANTHROPIC_API_KEY` (which plain `claude` would use)
 
-## Windows
+It can then run **one tiny live request** through OpenRouter. This uses a small amount of quota or credits.
 
-The reset operation removes:
-
-- OpenRouter configuration
-- encrypted API key
-- `claude-or` launcher
-- the setup directory from PATH, if it was added by the script
-
-It **does not uninstall Claude Code**.
-
-The Windows configuration directory removed is:
-
-```text
-%USERPROFILE%\.claude-openrouter
-```
-
-## macOS / Linux / WSL
-
-The reset operation removes:
-
-- OpenRouter environment configuration
-- `claude-or`
-- profile lines added by the setup script
-
-It does **not** uninstall Claude Code.
-
-The script notes that a native Claude Code installation can separately be removed by deleting its native installation files if that is what you intend.
-
----
-
-# Security
-
-## API keys
-
-Always use your own OpenRouter key.
-
-Never:
-
-- paste the key into GitHub
-- commit the key
-- put the key in a README
-- send the key to another person
-- put the key in source control
-- include it in screenshots or logs
-
-The scripts themselves do not contain an embedded OpenRouter key.
-
-## Windows
-
-The key is converted to a SecureString and persisted using Windows DPAPI.
-
-The launcher decrypts it only when starting Claude Code.
-
-## macOS / Linux / WSL
-
-The key is stored in:
-
-```text
-~/.config/claude-openrouter/env
-```
-
-with:
-
-```text
-600
-```
-
-permissions.
-
-That means the file is intended to be readable/writable only by its owner.
-
----
-
-# Important OpenRouter / Free Model Considerations
-
-If you select a free model, the setup warns about several limitations:
-
-- Free models can have tight rate limits.
-- Daily limits can change.
-- Free endpoints may log prompts.
-- Tool-calling behavior may differ between models.
-- Claude Code is not guaranteed to behave correctly with arbitrary non-Anthropic models.
-
-For that reason, do **not** send secrets, credentials, private source code, or other sensitive material through a free endpoint unless you have independently verified the endpoint's privacy and logging behavior.
-
-For Claude-specific compatibility, using Anthropic's first-party models through OpenRouter is the configuration the script identifies as having the strongest compatibility.
-
----
-
-# OpenRouter Credits
-
-If you select:
-
-```text
-Anthropic Claude via OpenRouter
-```
-
-the requests are billed against your OpenRouter credits.
-
-The setup does not provide or manage credits for you.
-
----
-
-# Troubleshooting
-
-## `claude: command not found`
-
-Run the setup again and choose:
-
-```text
-1. Install Claude Code
-```
-
-If installation has completed but the command is still unavailable, open a new terminal.
-
-On Linux/macOS, make sure:
-
-```text
-~/.local/bin
-```
-
-is on PATH.
-
-You can check:
-
-```bash
-echo "$PATH"
-```
-
-On Windows:
-
-```powershell
-Get-Command claude
-```
-
----
-
-## `claude-or: command not found`
-
-### Windows
-
-Check whether the configuration directory was added to your user PATH.
-
-Open a new PowerShell window after setup.
-
-You can also run the generated launcher directly from:
-
-```text
-%USERPROFILE%\.claude-openrouter\claude-or.cmd
-```
-
-### macOS/Linux/WSL
-
-Check:
-
-```bash
-ls -l ~/.local/bin/claude-or
-```
-
-Then:
-
-```bash
-echo "$PATH"
-```
-
-If necessary, add:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-to the appropriate shell profile.
-
----
-
-## OpenRouter rejected the API key
-
-Run:
-
-```text
-[2] Configure OpenRouter
-```
-
-and enter the key again.
-
-Check that:
-
-- the key is complete
-- there are no spaces
-- the key is active
-- it belongs to your OpenRouter account
-- it normally starts with `sk-or-`
-
-The setup explicitly treats HTTP `401` and `403` responses as key rejection.
-
----
-
-## Key cannot be decrypted on Windows
-
-The Windows encrypted key is tied to the Windows user/machine context used to create it.
-
-If the setup reports:
-
-```text
-Could not decrypt the saved key
-```
-
-re-run:
-
-```text
-[2] Configure OpenRouter
-```
-
-and save a new key.
-
----
-
-## `/status` shows the wrong authentication
-
-First check whether you previously authenticated directly with Anthropic.
-
-Inside Claude Code:
-
-```text
-/logout
-```
-
-Then quit and relaunch:
-
-```bash
-claude-or
-```
-
-Run:
-
-```text
-/status
-```
-
-The OpenRouter launcher should provide:
+Finally, inside `claude-or` run `/status` and look for:
 
 ```text
 Auth token: ANTHROPIC_AUTH_TOKEN
+Anthropic base URL: https://openrouter.ai/api
 ```
 
 ---
 
-## `ANTHROPIC_API_KEY` conflict
+## Where files are stored
 
-The OpenRouter launcher deliberately clears:
+### Windows: `%USERPROFILE%\.claude-openrouter`
 
 ```text
-ANTHROPIC_API_KEY
+.claude-openrouter\
+├── key.enc             your key, encrypted with Windows DPAPI (this Windows user, this PC only)
+├── config.json         chosen model and environment settings
+├── claude-or-run.ps1   the launcher logic
+└── claude-or.cmd       the command you type
 ```
 
-before starting Claude Code.
+### macOS / Linux / WSL
 
-The installation checker also warns if your current shell has a real Anthropic API key.
+```text
+~/.config/claude-openrouter/env    your key and model settings (chmod 600, directory 700)
+~/.local/bin/claude-or             the launcher
+```
 
-This matters because you do not want a different authentication variable unexpectedly taking precedence.
+The key is never written to a `.env` file, a project folder, or your shell profile.
 
 ---
 
-## Free model list cannot be loaded
+## Troubleshooting
 
-The setup needs network access to retrieve OpenRouter's current model list.
+### Quick lookup
 
-On macOS/Linux/WSL, automatic model discovery also needs either:
+| Symptom | Fix |
+|---|---|
+| Windows: `claude` not recognized | Menu **[5]**, then reopen PowerShell |
+| Windows: `claude-or` not recognized | Menu **[5]**, or `$env:Path += ";$env:USERPROFILE\.claude-openrouter"` for this window |
+| Windows: `running scripts is disabled` | Menu **[5]** (replaces an old blocked `claude-or.ps1`) |
+| Windows: "Could not decrypt the saved key" | Menu **[2]** and re-enter the key |
+| Unix: `claude` or `claude-or` not found | Add `~/.local/bin` to PATH, open a new terminal |
+| OpenRouter rejected the key | Menu **[2]** and re-enter it |
+| `/status` shows the wrong auth | `/logout`, quit, start `claude-or` again |
+| Free model list won't load | Press `m` and type a model ID |
 
-```text
-jq
-```
+### Windows details
 
-or:
+Start with menu **[5] Fix PATH / launcher problems**. It locates `claude.exe` even when PATH is wrong, adds it to your user PATH, rewrites the launcher files (no need to re-enter your key), adds the launcher folder to PATH, removes any old blocked `claude-or.ps1`, and reports your execution policy. Windows that were already open must be closed and reopened to see the PATH change.
 
-```text
-python3
-```
-
-If the list cannot be retrieved, choose:
-
-```text
-m
-```
-
-and enter a model ID manually.
-
-On Windows, the PowerShell implementation handles the OpenRouter model list directly.
-
----
-
-## Live test fails
-
-Run the installation checker:
-
-```text
-[3] Check installation
-```
-
-Verify:
-
-1. `claude` is installed
-2. the OpenRouter configuration exists
-3. the saved key is accepted
-4. the selected model is valid
-5. `claude-or` exists
-6. `/status` reports the OpenRouter base URL
-
-The live test intentionally sends a tiny request and may consume a small amount of quota/credits.
-
----
-
-# Command Reference
-
-## Windows
-
-Start setup:
+**`claude` is not recognized.** Installed but not on PATH. Manual fix:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1
-```
-
-Start OpenRouter Claude Code:
-
-```powershell
-claude-or
-```
-
-Run a non-interactive test:
-
-```powershell
-claude-or -p "Reply with the single word: OK"
-```
-
-Check Claude installation:
-
-```powershell
+$p = "$env:USERPROFILE\.local\bin"
+[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ";$p", 'User')
+$env:Path += ";$p"
 claude --version
 ```
 
----
+If it is still missing, run `Get-ChildItem $env:USERPROFILE\.local\bin`. An empty folder means you should run **[1]** again.
 
-## macOS / Linux / WSL
+**`claude-or` is not recognized.** The launcher lives in `%USERPROFILE%\.claude-openrouter`, and that exact folder must be on PATH. Adding your *project* folder to PATH does nothing for it.
 
-Start setup:
+```powershell
+dir "$env:USERPROFILE\.claude-openrouter"   # expect claude-or.cmd, claude-or-run.ps1, config.json, key.enc
+```
+
+If the folder doesn't exist, run **[2] Configure OpenRouter** first.
+
+**`File ...claude-or.ps1 cannot be loaded because running scripts is disabled`.** PowerShell prefers `claude-or.ps1` over `claude-or.cmd`, and its default execution policy blocks `.ps1` files. Current versions avoid this entirely by naming the script `claude-or-run.ps1` and starting it only from `claude-or.cmd` with `-ExecutionPolicy Bypass` for that one process, so **no policy change is needed**. If you have an older install, run **[5]**. You may optionally allow local scripts for your user only:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+If a Group Policy controls that setting it can't be changed, but `claude-or.cmd` still works.
+
+### macOS / Linux / WSL details
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+ls -l ~/.local/bin/claude-or     # launcher exists?
+echo "$PATH"                     # is ~/.local/bin in it?
 ```
 
-Start OpenRouter Claude Code:
+If needed, add this to your profile and open a new terminal:
 
 ```bash
-claude-or
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Run a non-interactive test:
+### Live test fails
 
-```bash
-claude-or -p "Reply with the single word: OK"
-```
-
-Check Claude installation:
-
-```bash
-claude --version
-```
-
-Check the launcher:
-
-```bash
-command -v claude-or
-```
-
-Check the protected configuration file:
-
-```bash
-ls -l ~/.config/claude-openrouter/env
-```
-
-Expected permissions:
-
-```text
--rw------- 
-```
-
-or equivalent mode:
-
-```text
-600
-```
+Run **Check installation** and confirm: `claude` is installed, the config exists, the key is accepted, the model ID is valid, `claude-or` resolves, and `/status` shows the OpenRouter base URL. Free models can also be rate-limited or temporarily unavailable.
 
 ---
 
-# Configuration Layout
+## FAQ
 
-## Windows
+**Is Claude Code free with this?**
+No. The scripts install Claude Code and connect it to OpenRouter. Some OpenRouter models are free; the terms can change.
 
-```text
-%USERPROFILE%\
-└── .claude-openrouter\
-    ├── key.enc
-    ├── config.json
-    ├── claude-or.ps1
-    └── claude-or.cmd
-```
+**Does this replace my normal `claude`?**
+No. Your Anthropic setup keeps working. Only `claude-or` uses OpenRouter (unless you opt in on Unix).
 
-## macOS / Linux / WSL
+**Can I switch models without re-running setup?**
+Re-running **[2]** is the dependable way. Arguments such as `--model <id>` are forwarded to Claude Code, but the launcher also pins model variables, so results depend on Claude Code's own behavior. Whatever you use must be a valid OpenRouter model ID.
 
-```text
-~/
-├── .config/
-│   └── claude-openrouter/
-│       └── env
-└── .local/
-    └── bin/
-        └── claude-or
-```
+**Why does the script clear `ANTHROPIC_API_KEY`?**
+So a real Anthropic key in your environment can never take precedence over the OpenRouter token during `claude-or`.
+
+**Why a separate `claude-or-run.ps1` on Windows?**
+So PowerShell resolves `claude-or` to the `.cmd`, which bypasses the execution policy for itself only. See [Windows details](#windows-details).
+
+**Can I share the script with a key already inside?**
+Please don't. Anyone who received it could spend your credits. Every user should create their own key.
+
+**WSL or native Windows?**
+Running `./setup.sh` *inside WSL* installs the Linux build inside WSL, which is separate from native Windows. Running it from Git Bash detects native Windows and offers to launch `setup.ps1` (keep both files in the same folder).
 
 ---
 
-# Recommended Usage Pattern
+## Security
 
-If you want to keep your normal Claude Code account and OpenRouter available side by side, use:
-
-```text
-claude
-```
-
-for your normal Anthropic setup and:
-
-```text
-claude-or
-```
-
-whenever you want OpenRouter.
-
-This is the default design of the scripts and avoids changing your normal Claude Code environment.
+- The scripts contain **no** embedded key. Every user brings their own.
+- Never paste your key into GitHub, issues, screenshots or logs.
+- **Windows:** the key is stored encrypted with DPAPI, readable only by your Windows user on that PC, and decrypted only when `claude-or` starts.
+- **macOS / Linux / WSL:** the key lives in a `600` file inside a `700` directory, and is passed to `curl` for validation without appearing in the process list.
+- The installers run Anthropic's official scripts (`https://claude.ai/install.sh` and `https://claude.ai/install.ps1`) and ask for confirmation first. Read them if you want to know exactly what they do.
+- The scripts never change your system-wide PowerShell execution policy.
 
 ---
 
-# What the Setup Does Not Do
+## Reset and uninstall
 
-The scripts do not:
+Menu option **[4] Reset / remove OpenRouter config** removes what these scripts created and undoes PATH or profile lines they added. It does **not** uninstall Claude Code.
 
-- embed an OpenRouter API key
-- upload your key to this repository
-- modify your normal `claude` command by default
-- require a `.env` file
-- store the Windows key in the registry
-- uninstall Claude Code when resetting OpenRouter configuration
+| Platform | Removed |
+|---|---|
+| Windows | `%USERPROFILE%\.claude-openrouter` and its PATH entry |
+| macOS / Linux / WSL | `~/.config/claude-openrouter`, `~/.local/bin/claude-or`, and the marked profile block |
 
-The Unix script can optionally make `claude` use OpenRouter by modifying your shell profile. The Windows script intentionally does not enable this by default because of the plaintext environment-variable concern.
+To remove Claude Code itself on Unix, delete `~/.local/bin/claude` and `~/.local/share/claude`. On Windows, see Anthropic's Claude Code documentation.
 
 ---
 
-# Files
+## Project layout
 
 ```text
 .
-├── setup.ps1
-├── setup.sh
-└── README.md
+├── setup.ps1    Windows installer / configurator
+├── setup.sh     macOS, Linux, WSL installer / configurator
+└── README.md    this file
 ```
-
-### `setup.ps1`
-
-Native Windows interactive installer/configurator.
-
-### `setup.sh`
-
-Interactive macOS/Linux/WSL installer/configurator. It also detects Git Bash/MSYS/Cygwin on Windows and can hand off to the PowerShell setup.
-
-### `README.md`
-
-This documentation.
-
----
-
-# Full First-Time Workflow
-
-## Windows
-
-```text
-1. Open PowerShell
-2. cd into the project directory
-3. Run setup.ps1
-4. Choose 1
-5. Install Claude Code
-6. Choose 2
-7. Enter your OpenRouter key
-8. Choose a model
-9. Keep the separate `claude-or` launcher
-10. Open a new terminal if PATH was changed
-11. Run `claude-or`
-12. Run `/status`
-13. Confirm the OpenRouter base URL
-```
-
-## macOS / Linux / WSL
-
-```text
-1. Open a terminal
-2. cd into the project directory
-3. chmod +x setup.sh
-4. Run ./setup.sh
-5. Choose 1
-6. Install Claude Code
-7. Choose 2
-8. Enter your OpenRouter key
-9. Choose a model
-10. Add ~/.local/bin to PATH if requested
-11. Open a new terminal
-12. Run `claude-or`
-13. Run `/status`
-14. Confirm the OpenRouter base URL
-```
-
----
-
-# Notes
-
-The scripts intentionally keep the OpenRouter launcher separate from the normal Claude Code command unless you opt into making OpenRouter the default.
-
-The Windows implementation encrypts the saved key with Windows DPAPI, while the macOS/Linux/WSL implementation protects the configuration file with filesystem permissions.
-
-For free models, availability, limits, pricing, logging behavior, and supported tool-calling capabilities can change independently of this repository. Always verify the current OpenRouter model and endpoint behavior before using a model for sensitive or production work.

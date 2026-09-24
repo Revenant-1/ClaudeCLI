@@ -9,6 +9,13 @@
      on this machine), not in plain text, not in a .env file, not in the registry.
    * A launcher (claude-or) runs Claude Code through OpenRouter, so plain `claude`
      (Anthropic login) is untouched unless you opt in.
+
+  Known Windows pitfalls (handled automatically, or by menu option 5):
+   1. 'claude-or is not recognized'  -> its folder (~\.claude-openrouter) wasn't on PATH.
+   2. 'running scripts is disabled'  -> PowerShell prefers claude-or.ps1 over claude-or.cmd and
+      blocks .ps1 files under the default execution policy. The launcher script is therefore
+      named claude-or-run.ps1 and is only ever started by claude-or.cmd with -ExecutionPolicy
+      Bypass (for that one process). No system-wide policy change is required.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -31,9 +38,15 @@ function Ask-YN($q, [bool]$default = $true) {
     if ([string]::IsNullOrWhiteSpace($a)) { return $default }
     return $a -match '^[Yy]'
 }
-function Refresh-Path {
-    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
-                [Environment]::GetEnvironmentVariable('Path', 'User')
+function Refresh-Path {   # merge Machine + User + current session PATH, without duplicates
+    $all  = @([Environment]::GetEnvironmentVariable('Path', 'Machine'),
+              [Environment]::GetEnvironmentVariable('Path', 'User'), $env:Path) -join ';'
+    $seen = @{}
+    $out  = foreach ($p in ($all -split ';')) {
+        $k = $p.Trim().TrimEnd('\').ToLower()
+        if ($k -and -not $seen.ContainsKey($k)) { $seen[$k] = $true; $p.Trim() }
+    }
+    $env:Path = $out -join ';'
 }
 function Plain-FromSecure([System.Security.SecureString]$s) {
     $b = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
@@ -60,12 +73,7 @@ function Install-Claude {
     if (-not (Ask-YN 'Continue?' $true)) { return }
     try {
         Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
-        Refresh-Path
-        if (Get-Command claude -ErrorAction SilentlyContinue) {
-            Ok "Claude Code installed: $(& claude --version 2>$null)"
-        } else {
-            Warn "Installed, but 'claude' isn't on PATH yet. Open a new PowerShell window."
-        }
+        Fix-ClaudePath | Out-Null
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
             Warn 'Git for Windows was not found. If Claude Code complains about Git Bash, install it from https://git-scm.com'
         }
@@ -144,13 +152,21 @@ $env:ANTHROPIC_BASE_URL   = 'https://openrouter.ai/api'
 $env:ANTHROPIC_AUTH_TOKEN = $key
 Remove-Item Env:ANTHROPIC_API_KEY -ErrorAction SilentlyContinue   # must not hold a real Anthropic key
 foreach ($p in $cfg.env.PSObject.Properties) { Set-Item -Path ("Env:" + $p.Name) -Value $p.Value }
-& claude @args
+$claude = (Get-Command claude -ErrorAction SilentlyContinue).Source
+if (-not $claude) {
+    foreach ($p in @("$env:USERPROFILE\.local\bin\claude.exe", "$env:APPDATA\npm\claude.cmd")) {
+        if (Test-Path $p) { $claude = $p; break }
+    }
+}
+if (-not $claude) { Write-Error "claude not found. Run setup.ps1 and choose 'Fix PATH / launcher problems'."; exit 1 }
+& $claude @args
 exit $LASTEXITCODE
 '@
 
 $LauncherCmd = @'
 @echo off
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0claude-or.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0claude-or-run.ps1" %*
+exit /b %ERRORLEVEL%
 '@
 
 function Build-EnvMap($sel) {
@@ -177,6 +193,81 @@ function Set-UserPath([string]$dir, [bool]$add) {
     Refresh-Path
 }
 
+function Find-Claude {   # returns full path to claude, even if PATH is broken
+    $c = Get-Command claude -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    foreach ($p in @(
+        (Join-Path $env:USERPROFILE '.local\bin\claude.exe'),
+        (Join-Path $env:USERPROFILE '.local\bin\claude.cmd'),
+        (Join-Path $env:APPDATA 'npm\claude.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\claude\claude.exe'))) {
+        if (Test-Path $p) { return $p }
+    }
+    return $null
+}
+
+function Fix-ClaudePath {
+    Refresh-Path
+    $exe = Find-Claude
+    if (-not $exe) { Err "Couldn't find claude anywhere. Choose 'Install Claude Code' first."; return $false }
+    $dir  = Split-Path -Parent $exe
+    $norm = { param($x) $x.Trim().TrimEnd('\').ToLower() }
+    $inUser = (@([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') | ForEach-Object { & $norm $_ }) -contains (& $norm $dir)
+    if (-not $inUser) { Set-UserPath $dir $true; Ok "Added $dir to your user PATH." }
+    else              { Ok "$dir is already on your user PATH." }
+    if ((@($env:Path -split ';') | ForEach-Object { & $norm $_ }) -notcontains (& $norm $dir)) { $env:Path += ";$dir" }
+    Ok "claude found: $exe  ($(& $exe --version 2>$null))"
+    Write-Host '  Windows already open (or other terminals) need to be closed and reopened to see the change.'
+    return $true
+}
+
+function Write-Launchers {
+    New-Item -ItemType Directory -Force -Path $Base | Out-Null
+    Set-Content -Path (Join-Path $Base 'claude-or-run.ps1') -Value $LauncherPs1 -Encoding UTF8
+    Set-Content -Path (Join-Path $Base 'claude-or.cmd')     -Value $LauncherCmd -Encoding ASCII
+    # Older versions created claude-or.ps1. PowerShell picks .ps1 before .cmd, and execution
+    # policy then blocks it, so remove it.
+    $legacy = Join-Path $Base 'claude-or.ps1'
+    if (Test-Path $legacy) { Remove-Item $legacy -Force; Ok 'Removed old claude-or.ps1 (blocked by execution policy).' }
+}
+
+function Ensure-OnUserPath([string]$dir) {
+    $norm = { param($x) ([string]$x).Trim().TrimEnd('\').ToLower() }
+    $inUser = (@([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') | ForEach-Object { & $norm $_ }) -contains (& $norm $dir)
+    if (-not $inUser) { Set-UserPath $dir $true; Ok "Added $dir to your user PATH." }
+    else              { Ok "$dir is already on your user PATH." }
+    if ((@($env:Path -split ';') | ForEach-Object { & $norm $_ }) -notcontains (& $norm $dir)) { $env:Path += ";$dir" }
+}
+
+function Fix-ExecutionPolicy {
+    $eff = Get-ExecutionPolicy
+    if ($eff -in @('Restricted', 'AllSigned')) {
+        Warn "PowerShell execution policy is '$eff', so .ps1 scripts are blocked."
+        Write-Host "  'claude-or' doesn't need this changed (its .cmd bypasses the policy for itself only)."
+        if (Ask-YN 'Also allow local scripts for your Windows user only (RemoteSigned)?' $false) {
+            try {
+                Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+                Ok 'Execution policy for CurrentUser set to RemoteSigned.'
+            } catch { Err "Couldn't change it (a Group Policy may control it): $($_.Exception.Message)" }
+        }
+    } else { Ok "Execution policy is '$eff' (local scripts can run)." }
+}
+
+function Fix-Everything {
+    Write-Host ''
+    Write-Host 'Repairing PATH / launcher problems' -ForegroundColor Cyan
+    Fix-ClaudePath | Out-Null
+    if (Test-Path $Base) {
+        Write-Launchers
+        Ensure-OnUserPath $Base
+        if (-not (Test-Path $KeyFile)) { Warn "No saved key yet. Choose 'Configure OpenRouter' to finish setup." }
+        $r = Get-Command claude-or -ErrorAction SilentlyContinue
+        if ($r) { Ok "'claude-or' resolves to: $($r.Source)" }
+        else    { Warn "'claude-or' still isn't found in this window. Close it and open a new PowerShell." }
+    } else { Warn "No OpenRouter launcher yet. Choose 'Configure OpenRouter'." }
+    Fix-ExecutionPolicy
+}
+
 function Configure-OpenRouter {
     Write-Host ''
     Write-Host 'OpenRouter configuration' -ForegroundColor Cyan
@@ -194,18 +285,16 @@ function Configure-OpenRouter {
     New-Item -ItemType Directory -Force -Path $Base | Out-Null
     (ConvertTo-SecureString $key -AsPlainText -Force | ConvertFrom-SecureString) | Set-Content -Path $KeyFile -Encoding ASCII
     @{ mode = $sel.Mode; model = $sel.Model; env = (Build-EnvMap $sel) } | ConvertTo-Json -Depth 4 | Set-Content -Path $CfgFile -Encoding UTF8
-    Set-Content -Path (Join-Path $Base 'claude-or.ps1') -Value $LauncherPs1 -Encoding UTF8
-    Set-Content -Path (Join-Path $Base 'claude-or.cmd') -Value $LauncherCmd -Encoding ASCII
+    Write-Launchers
     $key = $null
 
     Ok "Configuration saved to $Base (key encrypted with Windows DPAPI)"
     if ($sel.Mode -eq 'anthropic') { Ok 'Model: Anthropic Claude via OpenRouter' } else { Ok "Model: $($sel.Model)" }
 
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if (($userPath -split ';') -notcontains $Base) {
-        if (Ask-YN "Add $Base to your user PATH so 'claude-or' works anywhere?" $true) {
-            Set-UserPath $Base $true; Ok "Added to PATH (open a new terminal to apply)."
-        }
+    if (Ask-YN "Add $Base to your user PATH so 'claude-or' works from any folder?" $true) {
+        Ensure-OnUserPath $Base
+    } else {
+        Warn "Without PATH you must run the launcher by full path: $Base\claude-or.cmd"
     }
 
     Write-Host ''
@@ -218,7 +307,7 @@ function Configure-OpenRouter {
     Write-Host 'Next steps' -ForegroundColor Cyan
     Write-Host "  1. If you ever logged in to Claude Code with an Anthropic account, run /logout once inside it,"
     Write-Host "     then quit and relaunch (a cached login can cause auth-conflict / model-not-found errors)."
-    Write-Host "  2. Start it:  claude-or"
+    Write-Host "  2. Start it:  claude-or   (extra arguments are passed straight to Claude Code)"
     Write-Host "  3. Inside Claude Code run /status and confirm:"
     Write-Host "       Auth token: ANTHROPIC_AUTH_TOKEN"
     Write-Host "       Anthropic base URL: $OrBaseUrl"
@@ -238,7 +327,11 @@ function Check-Installation {
     Write-Host 'Installation check' -ForegroundColor Cyan
     $c = Get-Command claude -ErrorAction SilentlyContinue
     if ($c) { Ok "claude found: $($c.Source)  ($(& claude --version 2>$null))" }
-    else    { Err "claude not found on PATH (choose 'Install Claude Code')." }
+    else {
+        $found = Find-Claude
+        if ($found) { Warn "claude exists at $found but isn't on PATH. Choose 'Fix PATH / launcher problems'." }
+        else        { Err "claude not found (choose 'Install Claude Code')." }
+    }
 
     if ((Test-Path $KeyFile) -and (Test-Path $CfgFile)) {
         $cfg = Get-Content $CfgFile -Raw | ConvertFrom-Json
@@ -252,12 +345,19 @@ function Check-Installation {
         } catch { Err 'Could not decrypt the saved key (was it created by another Windows user/machine?). Re-run Configure.' }
     } else { Warn "No OpenRouter config yet (choose 'Configure OpenRouter')." }
 
-    if (Test-Path (Join-Path $Base 'claude-or.ps1')) { Ok 'Launcher present: claude-or' } else { Warn "Launcher 'claude-or' not found." }
+    $lc = Get-Command claude-or -ErrorAction SilentlyContinue
+    if ($lc) {
+        if ($lc.Source -like '*.ps1') { Warn "'claude-or' resolves to a .ps1 script that execution policy can block. Choose 'Fix PATH / launcher problems'." }
+        else { Ok "Launcher: $($lc.Source)" }
+    } elseif (Test-Path (Join-Path $Base 'claude-or.cmd')) {
+        Warn "Launcher exists in $Base but that folder isn't on PATH. Choose 'Fix PATH / launcher problems'."
+    } else { Warn "Launcher 'claude-or' not found (choose 'Configure OpenRouter')." }
+    Write-Host "  Execution policy: $(Get-ExecutionPolicy) (the launcher doesn't depend on it)"
     if ($env:ANTHROPIC_API_KEY) { Warn "Your session has a real ANTHROPIC_API_KEY. 'claude-or' clears it, but plain 'claude' will use it." }
 
-    if ((Test-Path (Join-Path $Base 'claude-or.ps1')) -and $c) {
+    if ((Test-Path (Join-Path $Base 'claude-or.cmd')) -and (Find-Claude)) {
         if (Ask-YN 'Run a quick live test through OpenRouter? (uses a tiny amount of quota/credits)' $false) {
-            & (Join-Path $Base 'claude-or.ps1') -p 'Reply with the single word: OK'
+            & (Join-Path $Base 'claude-or.cmd') -p 'Reply with the single word: OK'
         }
     }
     Write-Host "Inside Claude Code, /status should show 'Auth token: ANTHROPIC_AUTH_TOKEN' and base URL $OrBaseUrl."
@@ -281,14 +381,16 @@ while ($true) {
     Write-Host '  [2] Configure OpenRouter'
     Write-Host '  [3] Check installation'
     Write-Host '  [4] Reset / remove OpenRouter config'
-    Write-Host '  [5] Exit'
+    Write-Host '  [5] Fix PATH / launcher problems'
+    Write-Host '  [6] Exit'
     Write-Host ''
     switch (Read-Host 'Select') {
         '1' { Install-Claude;        Pause-Menu }
         '2' { Configure-OpenRouter;  Pause-Menu }
         '3' { Check-Installation;    Pause-Menu }
         '4' { Reset-Config;          Pause-Menu }
-        '5' { Write-Host 'Bye!'; exit 0 }
-        default { Warn 'Please choose 1-5.'; Start-Sleep 1 }
+        '5' { Fix-Everything; Pause-Menu }
+        '6' { Write-Host 'Bye!'; exit 0 }
+        default { Warn 'Please choose 1-6.'; Start-Sleep 1 }
     }
 }
